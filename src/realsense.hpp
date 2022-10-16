@@ -111,7 +111,7 @@ int realsense()
 
     // Actual calling of conversion and saving XYZRGB cloud to file
     ptr_cloud cloud = points_to_pcl(points, colored_frame);
-    pcl::io::savePCDFileASCII("cloud_test.pcd", *cloud);
+    pcl::io::savePCDFileASCII("data/scene.pcd", *cloud);
 
     waitKey(0);
 

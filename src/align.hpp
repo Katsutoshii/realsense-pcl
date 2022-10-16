@@ -22,7 +22,7 @@ typedef pcl::PointCloud<FeatureT> FeatureCloudT;
 typedef pcl::visualization::PointCloudColorHandlerCustom<PointNT> ColorHandlerT;
 
 // Align a rigid object to a scene with clutter and occlusions
-int align(int argc, char **argv)
+int align(const char *scene_pcd, const char *object_pcd)
 {
     // Point clouds
     PointCloudT::Ptr object(new PointCloudT);
@@ -31,17 +31,10 @@ int align(int argc, char **argv)
     FeatureCloudT::Ptr object_features(new FeatureCloudT);
     FeatureCloudT::Ptr scene_features(new FeatureCloudT);
 
-    // Get input object and scene
-    if (argc != 3)
-    {
-        pcl::console::print_error("Syntax is: %s object.pcd scene.pcd\n", argv[0]);
-        return (1);
-    }
-
     // Load object and scene
     pcl::console::print_highlight("Loading point clouds...\n");
-    if (pcl::io::loadPCDFile<PointNT>(argv[1], *object) < 0 ||
-        pcl::io::loadPCDFile<PointNT>(argv[2], *scene) < 0)
+    if (pcl::io::loadPCDFile<PointNT>(object_pcd, *object) < 0 ||
+        pcl::io::loadPCDFile<PointNT>(scene_pcd, *scene) < 0)
     {
         pcl::console::print_error("Error loading object/scene file!\n");
         return (1);
