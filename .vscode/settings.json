@@ -1,3 +1,12 @@
 {
-    "cmake.sourceDirectory": "${workspaceFolder}/src"
+    "cmake.sourceDirectory": "${workspaceFolder}/src",
+    "files.associations": {
+        "*.txt": "log",
+        "*.spec": "python",
+        "*.jams": "json",
+        "*.pest": "peg",
+        "*.json5": "jsonc",
+        "memory": "cpp",
+        "core": "cpp"
+    }
 }

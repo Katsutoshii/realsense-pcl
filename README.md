@@ -8,6 +8,8 @@
 
 ```
 vcpkg install pcl[core,cuda,opengl,qt,vtk]:x64-windows --recurse
+vcpkg install realsense2:x64-windows
+vcpkg install opencv:x64-windows
 ```
 
 1. Set your vcpkg toolchain file for VSCode if you haven't already:

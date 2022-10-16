@@ -1,4 +1,4 @@
 # Run MSBuild
 pushd build
-msbuild "./alignment_prerejective.sln"
+msbuild "./main.sln" /property:Configuration=Release
 popd
