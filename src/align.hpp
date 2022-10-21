@@ -1,3 +1,4 @@
+#pragma once
 #include <Eigen/Core>
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
@@ -12,6 +13,8 @@
 #include <pcl/registration/sample_consensus_prerejective.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/visualization/pcl_visualizer.h>
+#include <pcl/filters/crop_box.h>
+#include "transform.hpp"
 
 // Types
 typedef pcl::PointNormal PointNT;
@@ -21,52 +24,45 @@ typedef pcl::FPFHEstimationOMP<PointNT, PointNT, FeatureT> FeatureEstimationT;
 typedef pcl::PointCloud<FeatureT> FeatureCloudT;
 typedef pcl::visualization::PointCloudColorHandlerCustom<PointNT> ColorHandlerT;
 
-// Align a rigid object to a scene with clutter and occlusions
-int align(const char *scene_pcd, const char *object_pcd)
+void Downsample(PointCloudT::Ptr cloud, float leaf = 0.005f)
 {
-    // Point clouds
-    PointCloudT::Ptr object(new PointCloudT);
-    PointCloudT::Ptr object_aligned(new PointCloudT);
-    PointCloudT::Ptr scene(new PointCloudT);
-    FeatureCloudT::Ptr object_features(new FeatureCloudT);
-    FeatureCloudT::Ptr scene_features(new FeatureCloudT);
-
-    // Load object and scene
-    pcl::console::print_highlight("Loading point clouds...\n");
-    if (pcl::io::loadPCDFile<PointNT>(object_pcd, *object) < 0 ||
-        pcl::io::loadPCDFile<PointNT>(scene_pcd, *scene) < 0)
-    {
-        pcl::console::print_error("Error loading object/scene file!\n");
-        return (1);
-    }
-
     // Downsample
     pcl::console::print_highlight("Downsampling...\n");
     pcl::VoxelGrid<PointNT> grid;
-    const float leaf = 0.005f;
     grid.setLeafSize(leaf, leaf, leaf);
-    grid.setInputCloud(object);
-    grid.filter(*object);
-    grid.setInputCloud(scene);
-    grid.filter(*scene);
+    grid.setInputCloud(cloud);
+    grid.filter(*cloud);
+}
 
-    // Estimate normals for scene
-    pcl::console::print_highlight("Estimating scene normals...\n");
-    pcl::NormalEstimationOMP<PointNT, PointNT> nest;
-    nest.setRadiusSearch(0.01);
-    nest.setInputCloud(scene);
-    nest.compute(*scene);
-
+void EstimateFeatures(PointCloudT::Ptr cloud, FeatureCloudT::Ptr output_features)
+{
     // Estimate features
     pcl::console::print_highlight("Estimating features...\n");
     FeatureEstimationT fest;
     fest.setRadiusSearch(0.025);
-    fest.setInputCloud(object);
-    fest.setInputNormals(object);
-    fest.compute(*object_features);
-    fest.setInputCloud(scene);
-    fest.setInputNormals(scene);
-    fest.compute(*scene_features);
+    fest.setInputCloud(cloud);
+    fest.setInputNormals(cloud);
+    fest.compute(*output_features);
+}
+
+// int RunICP(PointCloudT::Ptr object, PointCloudT::Ptr scen)
+// {
+// }
+
+int RunAlignment(PointCloudT::Ptr object, PointCloudT::Ptr scene, float leaf)
+{
+    FeatureCloudT::Ptr object_features(new FeatureCloudT);
+    FeatureCloudT::Ptr scene_features(new FeatureCloudT);
+
+    // Estimate normals for scene
+    pcl::console::print_highlight("Estimating scene normals...\n");
+    pcl::NormalEstimationOMP<PointNT, PointNT> nest;
+    nest.setRadiusSearch(1.5 * leaf);
+    nest.setInputCloud(scene);
+    nest.compute(*scene);
+
+    EstimateFeatures(scene, scene_features);
+    EstimateFeatures(object, object_features);
 
     // Perform alignment
     pcl::console::print_highlight("Starting alignment...\n");
@@ -75,41 +71,69 @@ int align(const char *scene_pcd, const char *object_pcd)
     align.setSourceFeatures(object_features);
     align.setInputTarget(scene);
     align.setTargetFeatures(scene_features);
-    align.setMaximumIterations(50000);               // Number of RANSAC iterations
+    align.setMaximumIterations(100000);              // Number of RANSAC iterations
     align.setNumberOfSamples(3);                     // Number of points to sample for generating/prerejecting a pose
     align.setCorrespondenceRandomness(5);            // Number of nearest features to use
-    align.setSimilarityThreshold(0.9f);              // Polygonal edge length similarity threshold
-    align.setMaxCorrespondenceDistance(2.5f * leaf); // Inlier threshold
-    align.setInlierFraction(0.25f);                  // Required inlier fraction for accepting a pose hypothesis
+    align.setSimilarityThreshold(0.25f);             // Polygonal edge length similarity threshold
+    align.setMaxCorrespondenceDistance(4.0f * leaf); // Inlier threshold
+    align.setInlierFraction(0.1f);                   // Required inlier fraction for accepting a pose hypothesis
     {
         pcl::ScopeTime t("Alignment");
-        align.align(*object_aligned);
+        align.align(*object);
     }
 
-    if (align.hasConverged())
-    {
-        // Print results
-        printf("\n");
-        Eigen::Matrix4f transformation = align.getFinalTransformation();
-        pcl::console::print_info("    | %6.3f %6.3f %6.3f | \n", transformation(0, 0), transformation(0, 1), transformation(0, 2));
-        pcl::console::print_info("R = | %6.3f %6.3f %6.3f | \n", transformation(1, 0), transformation(1, 1), transformation(1, 2));
-        pcl::console::print_info("    | %6.3f %6.3f %6.3f | \n", transformation(2, 0), transformation(2, 1), transformation(2, 2));
-        pcl::console::print_info("\n");
-        pcl::console::print_info("t = < %0.3f, %0.3f, %0.3f >\n", transformation(0, 3), transformation(1, 3), transformation(2, 3));
-        pcl::console::print_info("\n");
-        pcl::console::print_info("Inliers: %i/%i\n", align.getInliers().size(), object->size());
-
-        // Show alignment
-        pcl::visualization::PCLVisualizer visu("Alignment");
-        visu.addPointCloud(scene, ColorHandlerT(scene, 0.0, 255.0, 0.0), "scene");
-        visu.addPointCloud(object_aligned, ColorHandlerT(object_aligned, 0.0, 0.0, 255.0), "object_aligned");
-        visu.spin();
-    }
-    else
+    if (!align.hasConverged())
     {
         pcl::console::print_error("Alignment failed!\n");
-        return (1);
+        return 1;
     }
+    Eigen::Matrix4f transformation = align.getFinalTransformation();
 
-    return (0);
+    pcl::console::print_info("    | %6.3f %6.3f %6.3f | \n", transformation(0, 0), transformation(0, 1), transformation(0, 2));
+    pcl::console::print_info("R = | %6.3f %6.3f %6.3f | \n", transformation(1, 0), transformation(1, 1), transformation(1, 2));
+    pcl::console::print_info("    | %6.3f %6.3f %6.3f | \n", transformation(2, 0), transformation(2, 1), transformation(2, 2));
+    pcl::console::print_info("\n");
+    pcl::console::print_info("t = < %0.3f, %0.3f, %0.3f >\n", transformation(0, 3), transformation(1, 3), transformation(2, 3));
+    pcl::console::print_info("\n");
+    // pcl::console::print_info("Inliers: %i/%i\n", align.getInliers().size(), object->size());
+    return 0;
+}
+
+void Display(PointCloudT::Ptr scene, PointCloudT::Ptr object)
+{
+    vtkObject::GlobalWarningDisplayOff();
+    // Show alignment
+    pcl::visualization::PCLVisualizer vis("Alignment");
+    vis.addCoordinateSystem(5.0, 0.0, 0.0, 0.0);
+    vis.addPointCloud(scene, ColorHandlerT(scene, 63.0, 255.0, 63.0), "scene");
+    vis.addPointCloud(object, ColorHandlerT(object, 63.0, 63.0, 255.0), "object");
+
+    PCL_INFO("Press q to continue.\n");
+    vis.spin();
+}
+
+// Align a rigid object to a scene with clutter and occlusions
+int Align(const char *scene_pcd, const char *object_pcd)
+{
+    // Point clouds
+    PointCloudT::Ptr scene = Load(scene_pcd);
+    PointCloudT::Ptr object = Load(object_pcd);
+
+    const float scale_factor = 0.1;
+    ScalePointCloud(object, scale_factor);
+    ScalePointCloud(scene, scale_factor);
+
+    const float leaf = 1.5 * scale_factor;
+    Downsample(scene, leaf);
+    Downsample(object, leaf);
+    Display(scene, object);
+
+    RunAlignment(scene, object, leaf);
+
+    // Print results
+    printf("\n");
+    Display(scene, object);
+
+    // Result
+    return 0;
 }

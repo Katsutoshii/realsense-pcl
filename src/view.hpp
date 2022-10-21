@@ -1,3 +1,4 @@
+#pragma once
 #include <Eigen/Core>
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
@@ -13,31 +14,33 @@
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/PolygonMesh.h>
-
-// Types
-typedef pcl::PointNormal PointNT;
-typedef pcl::PointCloud<PointNT> PointCloudT;
-typedef pcl::FPFHSignature33 FeatureT;
-typedef pcl::FPFHEstimationOMP<PointNT, PointNT, FeatureT> FeatureEstimationT;
-typedef pcl::PointCloud<FeatureT> FeatureCloudT;
-typedef pcl::visualization::PointCloudColorHandlerCustom<PointNT> ColorHandlerT;
+#include "transform.hpp"
 
 // Align a rigid object to a scene with clutter and occlusions
-int view()
+int ViewPCDs(const std::vector<std::string> &paths)
 {
-    // Point clouds
-    PointCloudT::Ptr object(new PointCloudT);
-    // Load object and scene
-    pcl::console::print_highlight("Loading point clouds...\n");
-    if (pcl::io::loadPCDFile<PointNT>("data/nist.pcd", *object) < 0)
+    std::vector<PointCloudT::Ptr> clouds;
+    for (const auto &path : paths)
     {
-        pcl::console::print_error("Error loading object file!\n");
-        return (1);
+        clouds.push_back(Load(path));
     }
 
     // Show object
-    pcl::visualization::PCLVisualizer visu("Alignment");
-    visu.addPointCloud(object, ColorHandlerT(object, 64.0, 255.0, 64.0), "object");
+    pcl::visualization::PCLVisualizer visu("Viewer");
+    std::vector<std::vector<float>> colors = {
+        {64.0, 255.0, 64.0},
+        {255.0, 64.0, 64.0},
+        {64.0, 64.0, 255.0}};
+    for (int i = 0; i < clouds.size(); ++i)
+    {
+        // Hack to rotate the scene.
+        if (i == 0)
+        {
+            Rotate(clouds[i], 180.0f);
+        }
+        auto color = colors[i % 3];
+        visu.addPointCloud(clouds[i], ColorHandlerT(clouds[i], color[0], color[1], color[2]), "cloud" + std::to_string(i));
+    }
     visu.spin();
 
     return 0;
